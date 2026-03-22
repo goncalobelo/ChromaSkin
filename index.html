@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>ChromaSkin</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#06060a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ChromaSkin">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+  <!-- SEO / Share -->
+  <meta name="description" content="Find your perfect accent colours based on your skin tone.">
+  <meta property="og:title" content="ChromaSkin">
+  <meta property="og:description" content="Find your perfect accent colours based on your skin tone.">
+  <meta property="og:type" content="website">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  :root {
+    --bg: #06060a;
+    --text: #f0ece4;
+    --text-dim: rgba(240,236,228,0.4);
+    --text-ghost: rgba(240,236,228,0.2);
+    --glass: rgba(255,255,255,0.06);
+    --glass-border: rgba(255,255,255,0.1);
+    --serif: 'Instrument Serif', Georgia, serif;
+    --sans: 'DM Sans', system-ui, sans-serif;
+  }
+
+  html, body {
+    height: 100%; width: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    touch-action: manipulation;
+  }
+
+  /* ── SPLASH ── */
+  #splash {
+    position: fixed; inset: 0; z-index: 100;
+    background: linear-gradient(160deg, #06060a 0%, #0f0f1a 50%, #0a1628 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  #splash.hidden { opacity: 0; pointer-events: none; transform: scale(1.05); }
+
+  .splash-ring {
+    width: 110px; height: 110px; border-radius: 50%;
+    background: conic-gradient(#FF6F61, #D4A843, #228B22, #008080, #4169E1, #8E4585, #CC0000, #FF6F61);
+    display: flex; align-items: center; justify-content: center;
+    animation: spin 10s linear infinite;
+    margin-bottom: 44px;
+  }
+  .splash-ring-inner {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: #06060a;
+  }
+
+  .splash-title {
+    font-family: var(--serif); font-size: 48px; font-weight: 400;
+    letter-spacing: -0.02em; line-height: 1;
+  }
+  .splash-sub {
+    font-size: 13px; color: var(--text-dim); margin-top: 10px;
+    letter-spacing: 0.18em; text-transform: uppercase; font-weight: 300;
+  }
+
+  .btn-start {
+    margin-top: 52px; padding: 16px 44px;
+    font-family: var(--sans); font-size: 14px; font-weight: 500;
+    color: var(--text); background: var(--glass);
+    border: 1px solid var(--glass-border); border-radius: 50px;
+    cursor: pointer; letter-spacing: 0.1em; text-transform: uppercase;
+    transition: all 0.3s ease; outline: none;
+  }
+  .btn-start:active { background: rgba(255,255,255,0.12); transform: scale(0.97); }
+
+  .splash-footer {
+    position: absolute; bottom: max(24px, env(safe-area-inset-bottom, 24px));
+    font-size: 11px; color: var(--text-ghost); letter-spacing: 0.04em;
+  }
+
+  /* ── MAIN APP ── */
+  #app {
+    position: fixed; inset: 0;
+    opacity: 0; transition: opacity 0.6s ease 0.3s;
+  }
+  #app.visible { opacity: 1; }
+
+  #video-feed {
+    position: absolute; width: 100%; height: 100%;
+    object-fit: cover; transform: scaleX(-1);
+  }
+  #sample-canvas { display: none; }
+
+  .overlay {
+    position: absolute; inset: 0;
+    background: rgba(6,6,10,0.72);
+    transition: background 0.6s ease;
+  }
+  .overlay.analyzed {
+    background: rgba(6,6,10,0.85);
+  }
+
+  /* Face guide — visual handled via SVG, div only used for hidden toggle */
+  .face-guide { position: absolute; transition: opacity 0.4s ease; }
+  .face-guide.hidden { opacity: 0; }
+
+  /* Header */
+  .header {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: max(20px, env(safe-area-inset-top, 20px)) 22px 0;
+    z-index: 20;
+    display: flex; justify-content: space-between; align-items: flex-start;
+  }
+  .header-title {
+    font-family: var(--serif); font-size: 26px; font-weight: 400;
+  }
+  .header-meta {
+    font-size: 11px; color: var(--text-dim); margin-top: 3px;
+    letter-spacing: 0.12em; text-transform: uppercase; font-weight: 300;
+    display: flex; align-items: center; gap: 8px;
+    opacity: 0; animation: fadeUp 0.5s ease 0.2s forwards;
+  }
+  .skin-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.25);
+    display: inline-block;
+  }
+
+  .btn-rescan {
+    padding: 7px 16px; font-family: var(--sans); font-size: 11px;
+    color: var(--text-dim); background: var(--glass);
+    border: 1px solid var(--glass-border); border-radius: 20px;
+    cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase;
+    outline: none; transition: all 0.2s;
+  }
+  .btn-rescan:active { background: rgba(255,255,255,0.1); }
+
+  /* Color ring via SVG */
+  #color-ring-svg {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 10;
+    opacity: 0; animation: fadeUp 0.6s ease forwards;
+  }
+  #color-ring-svg .swatch { pointer-events: auto; cursor: pointer; }
+  #color-ring-svg .swatch:hover { filter: brightness(1.15); }
+
+  /* Bottom area */
+  .bottom {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 0 24px max(28px, env(safe-area-inset-bottom, 28px));
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    z-index: 20;
+  }
+
+  .btn-analyze {
+    padding: 17px 48px;
+    font-family: var(--sans); font-size: 14px; font-weight: 500;
+    color: var(--text); background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.18); border-radius: 50px;
+    cursor: pointer; letter-spacing: 0.1em; text-transform: uppercase;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    transition: all 0.3s ease; outline: none;
+  }
+  .btn-analyze:active { background: rgba(255,255,255,0.15); transform: scale(0.97); }
+  .btn-analyze:disabled { opacity: 0.4; cursor: wait; }
+
+  .hint {
+    font-size: 11px; color: var(--text-ghost); text-align: center;
+    max-width: 260px; line-height: 1.6;
+  }
+
+  /* Toggle */
+  .toggle-row {
+    display: flex; align-items: center; gap: 12px;
+    opacity: 0; animation: fadeUp 0.5s ease 0.3s forwards;
+  }
+  .toggle-label {
+    font-size: 11px; color: var(--text-dim);
+    letter-spacing: 0.1em; text-transform: uppercase; font-weight: 400;
+    transition: color 0.3s;
+  }
+  .toggle-label.active-bad { color: rgba(255,100,100,0.65); }
+
+  .toggle-track {
+    width: 46px; height: 24px; border-radius: 12px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.15);
+    position: relative; cursor: pointer;
+    transition: background 0.3s ease;
+  }
+  .toggle-track.on { background: rgba(200,50,50,0.4); }
+  .toggle-thumb {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--text); position: absolute; top: 2px; left: 3px;
+    transition: left 0.3s ease, background 0.3s ease;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+  .toggle-track.on .toggle-thumb { left: 23px; }
+  #app.light-bg .toggle-track { background: rgba(0,0,0,0.12); }
+  #app.light-bg .toggle-track.on { background: rgba(160,20,20,0.3); }
+
+  /* Selected color name tooltip */
+  .color-tooltip {
+    position: absolute; z-index: 25;
+    background: rgba(6,6,10,0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
+    padding: 8px 14px; text-align: center;
+    pointer-events: none;
+    opacity: 0; transform: translateY(4px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  .color-tooltip.show { opacity: 1; transform: translateY(0); }
+  .color-tooltip-name {
+    font-family: var(--serif); font-size: 18px; font-weight: 400;
+    color: #f0ece4;
+  }
+  .color-tooltip-hex {
+    font-size: 10px; color: rgba(240,236,228,0.5); letter-spacing: 0.08em;
+    margin-top: 2px;
+  }
+
+  /* Flash overlay */
+  #flash-overlay {
+    position: fixed; inset: 0; z-index: 90;
+    background: #fff; opacity: 0; pointer-events: none;
+    transition: opacity 0.12s ease;
+  }
+
+  /* Post-analysis footer row */
+  .post-row {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; gap: 10px;
+  }
+
+  /* Header — non-blocking after analysis */
+  .header.analyzed { pointer-events: none; }
+  .header.analyzed .btn-rescan { pointer-events: auto; }
+
+  /* Fullscreen preview */
+  #fullscreen-preview {
+    position: fixed; inset: 0; z-index: 200;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    cursor: pointer;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.35s ease;
+  }
+  #fullscreen-preview.show { opacity: 1; pointer-events: auto; }
+  .fs-name {
+    font-family: var(--serif); font-size: 44px; font-weight: 400;
+    transition: color 0.3s;
+  }
+  .fs-hex {
+    font-size: 15px; margin-top: 6px; letter-spacing: 0.12em;
+    text-transform: uppercase; transition: color 0.3s;
+  }
+  .fs-hint {
+    position: absolute; bottom: max(40px, env(safe-area-inset-bottom, 40px));
+    font-size: 12px; letter-spacing: 0.08em; transition: color 0.3s;
+  }
+
+  /* Why button */
+  .btn-why {
+    padding: 9px 12px;
+    font-family: var(--sans); font-size: 11px; font-weight: 400;
+    color: var(--text-dim); background: var(--glass);
+    border: 1px solid var(--glass-border); border-radius: 20px;
+    cursor: pointer; letter-spacing: 0.1em; text-transform: uppercase;
+    outline: none; transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn-why:active { background: rgba(255,255,255,0.1); }
+
+  /* Explanation sheet */
+  #explain-sheet {
+    position: fixed; inset: 0; z-index: 150;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    pointer-events: none;
+  }
+  #explain-sheet.show { pointer-events: auto; }
+  .explain-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(6,6,10,0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    opacity: 0; transition: opacity 0.35s ease;
+  }
+  #explain-sheet.show .explain-backdrop { opacity: 1; }
+  .explain-panel {
+    position: relative; z-index: 1;
+    background: #10101e; border: 1px solid var(--glass-border);
+    border-radius: 22px 22px 0 0;
+    padding: 10px 26px max(32px, env(safe-area-inset-bottom, 32px));
+    transform: translateY(100%);
+    transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  #explain-sheet.show .explain-panel { transform: translateY(0); }
+  .explain-handle {
+    width: 38px; height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.18); margin: 0 auto 22px;
+  }
+  .explain-tagline {
+    font-size: 10px; color: var(--text-dim); letter-spacing: 0.18em;
+    text-transform: uppercase; margin-bottom: 14px;
+  }
+  .explain-why {
+    font-family: var(--sans); font-size: 15px; font-weight: 300; line-height: 1.7;
+    color: var(--text); margin-bottom: 18px;
+  }
+  .explain-tip {
+    font-size: 12px; color: var(--text-dim); line-height: 1.65;
+    padding: 12px 14px;
+    background: rgba(255,255,255,0.04);
+    border-left: 2px solid rgba(255,255,255,0.14);
+    border-radius: 0 6px 6px 0;
+  }
+
+  /* Animations */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes guidePulse {
+    0%, 100% { opacity: 0.25; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 0.5; transform: translate(-50%, -50%) scale(1.02); }
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-ring"><div class="splash-ring-inner"></div></div>
+  <div class="splash-title">ChromaSkin</div>
+  <div class="splash-sub">Find your accent colours</div>
+  <button class="btn-start" id="btn-start">Enable Camera</button>
+  <div id="splash-error" style="display:none;margin-top:18px;font-size:12px;color:rgba(255,120,100,0.85);text-align:center;max-width:280px;line-height:1.6;"></div>
+  <div class="splash-footer">Your camera data stays on-device</div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <video id="video-feed" autoplay playsinline muted></video>
+  <canvas id="sample-canvas"></canvas>
+  <div class="overlay" id="overlay"></div>
+  <div class="face-guide" id="face-guide"></div>
+
+  <div class="header" id="main-header">
+    <div>
+      <div class="header-title">ChromaSkin</div>
+      <div class="header-meta" id="header-meta" style="display:none;">
+        <span id="season-label"></span>
+        <span class="skin-dot" id="skin-dot"></span>
+      </div>
+    </div>
+    <button class="btn-rescan" id="btn-rescan" style="display:none;" onclick="resetAnalysis()">Rescan</button>
+  </div>
+
+  <svg id="color-ring-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+
+  <div class="color-tooltip" id="color-tooltip">
+    <div class="color-tooltip-name" id="tooltip-name"></div>
+    <div class="color-tooltip-hex" id="tooltip-hex"></div>
+  </div>
+
+  <div class="bottom">
+    <div class="post-row" id="post-row" style="display:none;">
+      <button class="btn-why" id="btn-why" onclick="openExplain()">Why these colors?</button>
+      <div class="toggle-row" id="toggle-row">
+        <span class="toggle-label" id="lbl-good">Flattering</span>
+        <div class="toggle-track" id="toggle-track" onclick="toggleMode()">
+          <div class="toggle-thumb"></div>
+        </div>
+        <span class="toggle-label" id="lbl-bad">Avoid</span>
+      </div>
+    </div>
+    <button class="btn-analyze" id="btn-analyze" style="display:none;" onclick="analyze()">Analyze My Skin Tone</button>
+    <div class="hint" id="hint"></div>
+  </div>
+</div>
+
+<!-- EXPLANATION SHEET -->
+<div id="explain-sheet">
+  <div class="explain-backdrop" onclick="closeExplain()"></div>
+  <div class="explain-panel">
+    <div class="explain-handle"></div>
+    <div class="explain-tagline" id="explain-tagline"></div>
+    <div class="explain-why" id="explain-why"></div>
+    <div class="explain-tip" id="explain-tip"></div>
+  </div>
+</div>
+
+<!-- FLASH -->
+<div id="flash-overlay"></div>
+
+<!-- FULLSCREEN -->
+<div id="fullscreen-preview" onclick="closeFullscreen()">
+  <div class="fs-name" id="fs-name"></div>
+  <div class="fs-hex" id="fs-hex"></div>
+  <div class="fs-hint" id="fs-hint">Tap anywhere to close</div>
+</div>
+
+<script>
+// ── PALETTE DATA ──
+const PALETTES = {
+  warm_light: {
+    season: "Spring", good: [
+      {n:"Coral",h:"#FF6F61"},{n:"Peach",h:"#FFBE98"},{n:"Warm Gold",h:"#D4A843"},{n:"Salmon",h:"#FA8072"},
+      {n:"Turquoise",h:"#40E0D0"},{n:"Warm Green",h:"#7CB342"},{n:"Apricot",h:"#FBCEB1"},{n:"Camel",h:"#C19A6B"},
+      {n:"Aqua",h:"#00B5A3"},{n:"Ivory",h:"#FFFFF0"},{n:"Warm Red",h:"#E25033"},{n:"Champagne",h:"#F7E7CE"},
+    ], bad: [
+      {n:"Cool Grey",h:"#808080"},{n:"Icy Blue",h:"#A5D8FF"},{n:"Fuchsia",h:"#FF00FF"},
+      {n:"Charcoal",h:"#36454F"},{n:"Cool Pink",h:"#FFB6C1"},{n:"Slate",h:"#708090"},
+    ]
+  },
+  warm_medium: {
+    season: "Autumn", good: [
+      {n:"Terracotta",h:"#CC5C3A"},{n:"Olive",h:"#808000"},{n:"Burnt Orange",h:"#CC5500"},{n:"Mustard",h:"#E1AD01"},
+      {n:"Forest Green",h:"#228B22"},{n:"Rust",h:"#B7410E"},{n:"Teal",h:"#008080"},{n:"Chocolate",h:"#7B3F00"},
+      {n:"Warm Plum",h:"#8E4585"},{n:"Copper",h:"#B87333"},{n:"Moss",h:"#8A9A5B"},{n:"Warm Cream",h:"#FFFDD0"},
+    ], bad: [
+      {n:"Neon Pink",h:"#FF6EC7"},{n:"Icy Lavender",h:"#E6E6FA"},{n:"Electric Blue",h:"#0066FF"},
+      {n:"Silver",h:"#C0C0C0"},{n:"Cool White",h:"#F0F8FF"},{n:"Bubblegum",h:"#FFC1CC"},
+    ]
+  },
+  warm_deep: {
+    season: "Deep Autumn", good: [
+      {n:"Emerald",h:"#046307"},{n:"Rich Gold",h:"#B8860B"},{n:"Burnt Sienna",h:"#E97451"},{n:"Warm White",h:"#FAF0E6"},
+      {n:"Mango",h:"#FF8243"},{n:"Deep Teal",h:"#005F5F"},{n:"Cinnamon",h:"#D2691E"},{n:"Warm Red",h:"#CC2936"},
+      {n:"Amber",h:"#FFBF00"},{n:"Olive Drab",h:"#6B8E23"},{n:"Mahogany",h:"#C04000"},{n:"Warm Purple",h:"#7B2D8E"},
+    ], bad: [
+      {n:"Pastel Blue",h:"#AEC6CF"},{n:"Blush",h:"#DE5D83"},{n:"Light Grey",h:"#D3D3D3"},
+      {n:"Mauve",h:"#E0B0FF"},{n:"Baby Pink",h:"#F4C2C2"},{n:"Powder Blue",h:"#B0E0E6"},
+    ]
+  },
+  cool_light: {
+    season: "Summer", good: [
+      {n:"Lavender",h:"#967BB6"},{n:"Soft Pink",h:"#E8A0BF"},{n:"Powder Blue",h:"#6CA0DC"},{n:"Mauve",h:"#C08081"},
+      {n:"Sage",h:"#9CAF88"},{n:"Rose",h:"#D4838F"},{n:"Periwinkle",h:"#8E82FE"},{n:"Soft White",h:"#F5F0EB"},
+      {n:"Dusty Blue",h:"#7BA7BC"},{n:"Plum",h:"#8E4585"},{n:"Slate Blue",h:"#6A7FDB"},{n:"Cool Taupe",h:"#A89F91"},
+    ], bad: [
+      {n:"Orange",h:"#FF8C00"},{n:"Bright Yellow",h:"#FFD700"},{n:"Rust",h:"#B7410E"},
+      {n:"Olive",h:"#808000"},{n:"Tomato Red",h:"#FF6347"},{n:"Mustard",h:"#E1AD01"},
+    ]
+  },
+  cool_medium: {
+    season: "Cool Summer", good: [
+      {n:"Royal Blue",h:"#4169E1"},{n:"Berry",h:"#8E4585"},{n:"Emerald",h:"#50C878"},{n:"Cool Pink",h:"#DB7093"},
+      {n:"Navy",h:"#000080"},{n:"Amethyst",h:"#9966CC"},{n:"Teal",h:"#008B8B"},{n:"Cool Red",h:"#DC143C"},
+      {n:"Charcoal",h:"#36454F"},{n:"Steel Blue",h:"#4682B4"},{n:"Wine",h:"#722F37"},{n:"Icy Grey",h:"#D1D5DB"},
+    ], bad: [
+      {n:"Peach",h:"#FFDAB9"},{n:"Warm Beige",h:"#C8AD7F"},{n:"Burnt Orange",h:"#CC5500"},
+      {n:"Gold",h:"#D4A843"},{n:"Camel",h:"#C19A6B"},{n:"Tangerine",h:"#FF9966"},
+    ]
+  },
+  cool_deep: {
+    season: "Winter", good: [
+      {n:"True Red",h:"#CC0000"},{n:"Royal Purple",h:"#6B3FA0"},{n:"Sapphire",h:"#0F52BA"},{n:"Emerald",h:"#046307"},
+      {n:"Bright White",h:"#FFFFFF"},{n:"Fuchsia",h:"#C71585"},{n:"Black",h:"#0A0A0A"},{n:"Cool Grey",h:"#5A5A5A"},
+      {n:"Electric Blue",h:"#0066FF"},{n:"Lemon",h:"#FFF44F"},{n:"Hot Pink",h:"#FF1493"},{n:"Icy Blue",h:"#99CCFF"},
+    ], bad: [
+      {n:"Salmon",h:"#FA8072"},{n:"Camel",h:"#C19A6B"},{n:"Warm Beige",h:"#F5DEB3"},
+      {n:"Olive",h:"#808000"},{n:"Peach",h:"#FFDAB9"},{n:"Muted Gold",h:"#BFA76A"},
+    ]
+  },
+};
+
+// ── EXPLANATIONS ──
+const EXPLANATIONS = {
+  warm_light: {
+    tagline: "Warm & Light · Spring",
+    why: "Your skin has warm golden undertones with a luminous, fresh quality. Colours like coral, peach, and warm greens share that same sunny frequency — they reflect warmth back onto your face, making your complexion look brighter and more alive.",
+    tip: "Avoid icy or blue-based tones. They pull coolness into your face and can make you look washed out or tired."
+  },
+  warm_medium: {
+    tagline: "Warm & Medium · Autumn",
+    why: "Your skin carries rich, earthy undertones — golden, amber, or olive in depth. The best colours are organic and grounded: terracottas, rusts, and mossy greens vibrate at the same warm frequency as your skin, creating a natural harmony rather than a clash.",
+    tip: "Neon or icy shades will fight with your warmth. Stay in the range of nature — forest, spice, and earth."
+  },
+  warm_deep: {
+    tagline: "Warm & Deep · Deep Autumn",
+    why: "Your skin is richly pigmented with strong warm undertones. Bold, saturated colours — emerald, rich gold, cinnamon — have the presence to stand beside your depth and create striking harmony. Weaker tones simply disappear next to you.",
+    tip: "Pastels and muted greys will look flat and lifeless against your complexion. Choose colours with intensity."
+  },
+  cool_light: {
+    tagline: "Cool & Light · Summer",
+    why: "Your skin has cool, pink-blue undertones with a soft, delicate quality. Muted cool colours — lavender, dusty rose, powder blue — share your quiet elegance. They complement rather than compete, letting your natural softness come through.",
+    tip: "Warm oranges and golden yellows will clash with your undertone, pulling an unflattering sallowness into your skin."
+  },
+  cool_medium: {
+    tagline: "Cool & Medium · Cool Summer",
+    why: "Your skin has clear cool undertones with enough depth to carry stronger colours. Royal blue, berry, and cool reds look polished and deliberate against your complexion — they enhance without overwhelming.",
+    tip: "Warm tones like peach, camel, and gold pull yellow from your skin. Clear, cool colours are where you look most confident."
+  },
+  cool_deep: {
+    tagline: "Cool & Deep · Winter",
+    why: "Your skin is deeply pigmented with strong cool or neutral-cool undertones. High contrast is your advantage — true red, sapphire, pure white, and black create bold harmony with your complexion. These colours match your natural intensity without competing with it.",
+    tip: "Muted, earthy tones look muddy against your depth. You need colours with clarity, saturation, and edge."
+  }
+};
+
+// ── STATE ──
+let palette = null;
+let paletteKey = null;
+let showBad = false;
+let selectedIdx = -1;
+let analyzed = false;
+let skinHex = null;
+
+// ── ELEMENTS ──
+const $ = id => document.getElementById(id);
+const splash = $('splash'), app = $('app'), video = $('video-feed'),
+      canvas = $('sample-canvas'), overlay = $('overlay'),
+      faceGuide = $('face-guide'), svg = $('color-ring-svg'),
+      tooltip = $('color-tooltip'), btnAnalyze = $('btn-analyze'),
+      hint = $('hint'), toggleRow = $('toggle-row'),
+      headerMeta = $('header-meta'), btnRescan = $('btn-rescan'),
+      fsPreview = $('fullscreen-preview');
+
+// ── CAMERA ──
+function showSplashError(msg) {
+  const el = $('splash-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+$('btn-start').addEventListener('click', () => {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showSplashError('Camera API unavailable. Please open this page over HTTPS and allow camera access.');
+    return;
+  }
+
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+  }).then(stream => {
+    video.srcObject = stream;
+
+    function onReady() {
+      video.removeEventListener('loadedmetadata', onReady);
+      video.removeEventListener('canplay', onReady);
+      splash.classList.add('hidden');
+      app.classList.add('visible');
+      btnAnalyze.style.display = '';
+      hint.textContent = 'Position your face in the guide, then tap analyze';
+      layoutGuide();
+      window.addEventListener('resize', layoutGuide);
+    }
+
+    video.addEventListener('loadedmetadata', onReady);
+    video.addEventListener('canplay', onReady);
+
+    video.play().catch(err => console.error('video.play() failed:', err));
+  }).catch(err => {
+    console.error(err);
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      const isChrome = /CriOS/.test(navigator.userAgent);
+      const browser = isChrome ? 'Chrome' : 'Safari';
+      showSplashError('Camera access blocked. On iPhone: go to Settings → ' + browser + ' → Camera → Allow, then reload this page.');
+    } else if (err.name === 'NotFoundError') {
+      showSplashError('No camera found on this device.');
+    } else {
+      showSplashError('Could not start camera: ' + err.message);
+    }
+  });
+});
+
+// ── HEAD SHAPE ──
+function headPath(cx, cy, hw, hh) {
+  const p = (x, y) => `${(cx + hw*x).toFixed(2)} ${(cy + hh*y).toFixed(2)}`;
+  return [
+    `M ${cx.toFixed(2)} ${(cy - hh).toFixed(2)}`,
+    `C ${p(0.4,-1)} ${p(0.88,-0.65)} ${p(0.88,-0.18)}`,
+    `C ${p(0.96,0.12)} ${p(0.82,0.42)} ${p(0.60,0.66)}`,
+    `C ${p(0.36,0.88)} ${p(0.17,1)} ${cx.toFixed(2)} ${(cy+hh).toFixed(2)}`,
+    `C ${p(-0.17,1)} ${p(-0.36,0.88)} ${p(-0.60,0.66)}`,
+    `C ${p(-0.82,0.42)} ${p(-0.96,0.12)} ${p(-0.88,-0.18)}`,
+    `C ${p(-0.88,-0.65)} ${p(-0.4,-1)} ${cx.toFixed(2)} ${(cy-hh).toFixed(2)}`,
+    'Z'
+  ].join(' ');
+}
+
+function drawFaceGuide() {
+  const w = window.innerWidth, h = window.innerHeight;
+  const faceR = Math.min(w * 0.40, h * 0.26);
+  const cx = w / 2, cy = h * 0.48;
+  const hw = faceR * 0.82, hh = faceR * 1.12;
+
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.innerHTML = '';
+  svg.style.opacity = 1;
+
+  const outline = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+  outline.setAttribute('cx', cx.toFixed(2));
+  outline.setAttribute('cy', cy.toFixed(2));
+  outline.setAttribute('rx', hw.toFixed(2));
+  outline.setAttribute('ry', hh.toFixed(2));
+  outline.setAttribute('fill', 'none');
+  outline.setAttribute('stroke', 'rgba(240,236,228,0.35)');
+  outline.setAttribute('stroke-width', '1.5');
+  outline.setAttribute('stroke-dasharray', '6 4');
+  svg.appendChild(outline);
+}
+
+function layoutGuide() {
+  const w = window.innerWidth, h = window.innerHeight;
+  const faceR = Math.min(w * 0.40, h * 0.26);
+  const cx = w / 2, cy = h * 0.48;
+  const hw = faceR * 0.82, hh = faceR * 1.12;
+
+  faceGuide.style.width = hw * 2 + 'px';
+  faceGuide.style.height = hh * 2 + 'px';
+  faceGuide.style.left = cx + 'px';
+  faceGuide.style.top = cy + 'px';
+  faceGuide.style.transform = 'translate(-50%, -50%)';
+
+  // Ellipse mask on overlay matching face oval
+  const xPct = (hw / w * 100).toFixed(2) + '%';
+  const yPct = (hh / h * 100).toFixed(2) + '%';
+  const cxPct = (cx / w * 100).toFixed(2) + '%';
+  const cyPct = (cy / h * 100).toFixed(2) + '%';
+  const mask = `radial-gradient(ellipse ${xPct} ${yPct} at ${cxPct} ${cyPct}, transparent 99%, black 100%)`;
+  overlay.style.webkitMaskImage = mask;
+  overlay.style.maskImage = mask;
+
+  if (analyzed) drawRing();
+  else drawFaceGuide();
+}
+
+// ── ANALYSIS ──
+function analyze() {
+  btnAnalyze.disabled = true;
+  btnAnalyze.textContent = 'Analyzing…';
+
+  // Flash + freeze frame
+  const flash = $('flash-overlay');
+  flash.style.opacity = '0.75';
+  setTimeout(() => { flash.style.opacity = '0'; }, 180);
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0);
+  video.pause();
+
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const sz = 36;
+  const offsets = [[0,-28],[0,28],[-22,0],[22,0],[0,0],[-12,-12],[12,-12],[-12,12],[12,12]];
+  let tR = 0, tG = 0, tB = 0, cnt = 0;
+
+  offsets.forEach(([ox, oy]) => {
+    const d = ctx.getImageData(cx+ox-sz/2, cy+oy-sz/2, sz, sz);
+    for (let i = 0; i < d.data.length; i += 4) {
+      tR += d.data[i]; tG += d.data[i+1]; tB += d.data[i+2]; cnt++;
+    }
+  });
+
+  const aR = Math.round(tR/cnt), aG = Math.round(tG/cnt), aB = Math.round(tB/cnt);
+  skinHex = '#' + [aR,aG,aB].map(v => v.toString(16).padStart(2,'0')).join('');
+
+  const warmth = (aR - aB) / 255;
+  const lightness = (aR + aG + aB) / (3 * 255);
+  const isWarm = warmth > 0.06;
+  const depth = lightness > 0.65 ? 'light' : lightness > 0.4 ? 'medium' : 'deep';
+  const key = `${isWarm ? 'warm' : 'cool'}_${depth}`;
+  palette = PALETTES[key] || PALETTES.warm_medium;
+
+  setTimeout(() => {
+    analyzed = true;
+    paletteKey = key;
+    btnAnalyze.style.display = 'none';
+    faceGuide.classList.add('hidden');
+    overlay.classList.add('analyzed');
+    $('post-row').style.display = 'flex';
+    btnRescan.style.display = '';
+    headerMeta.style.display = 'flex';
+    $('main-header').classList.add('analyzed');
+    $('season-label').textContent = palette.season + ' palette';
+    $('skin-dot').style.background = skinHex;
+    hint.textContent = '';
+    selectedIdx = -1;
+    drawRing();
+  }, 700);
+}
+
+// ── COLOR RING HELPERS ──
+function polarToCartesian(cx, cy, r, angle) {
+  return { x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r };
+}
+function describeArc(cx, cy, outerR, innerR, startAngle, endAngle) {
+  const o1 = polarToCartesian(cx, cy, outerR, startAngle);
+  const o2 = polarToCartesian(cx, cy, outerR, endAngle);
+  const i1 = polarToCartesian(cx, cy, innerR, endAngle);
+  const i2 = polarToCartesian(cx, cy, innerR, startAngle);
+  const large = (endAngle - startAngle) > Math.PI ? 1 : 0;
+  return `M ${o1.x} ${o1.y} A ${outerR} ${outerR} 0 ${large} 1 ${o2.x} ${o2.y} L ${i1.x} ${i1.y} A ${innerR} ${innerR} 0 ${large} 0 ${i2.x} ${i2.y} Z`;
+}
+
+// ── ELLIPSE ARC ──
+function describeEllipseArc(cx, cy, rxIn, ryIn, rxOut, ryOut, startAngle, endAngle) {
+  const steps = 12;
+  const outer = [], inner = [];
+  for (let i = 0; i <= steps; i++) {
+    const a = startAngle + (endAngle - startAngle) * i / steps;
+    outer.push(`${(cx + rxOut * Math.cos(a)).toFixed(2)},${(cy + ryOut * Math.sin(a)).toFixed(2)}`);
+    inner.push(`${(cx + rxIn * Math.cos(a)).toFixed(2)},${(cy + ryIn * Math.sin(a)).toFixed(2)}`);
+  }
+  inner.reverse();
+  return `M ${outer.join(' L ')} L ${inner.join(' L ')} Z`;
+}
+
+// ── COLOR RING ──
+function drawRing() {
+  const w = window.innerWidth, h = window.innerHeight;
+  const cx = w / 2, cy = h * 0.48;
+  const faceR = Math.min(w * 0.40, h * 0.26);
+  const hw = faceR * 0.82, hh = faceR * 1.12;
+  const gap = 6, ringW = 44;
+  const hwIn = hw + gap, hhIn = hh + gap;
+  const hwOut = Math.min(hwIn + ringW, w / 2 - 6);
+  const hhOut = hhIn + ringW;
+  const colors = showBad ? palette.bad : palette.good;
+  const count = colors.length;
+  const segAngle = (Math.PI * 2) / count;
+
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.innerHTML = '';
+  svg.style.opacity = 1;
+
+  colors.forEach((c, i) => {
+    const startAngle = segAngle * i - Math.PI / 2;
+    const endAngle = segAngle * (i + 1) - Math.PI / 2 + 0.002;
+    const isSelected = i === selectedIdx;
+    const exp = isSelected ? 5 : 0;
+
+    if (isSelected) {
+      const ol = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      ol.setAttribute('d', describeEllipseArc(cx, cy, Math.max(0, hwIn - exp - 4), Math.max(0, hhIn - exp - 4), hwOut + exp + 4, hhOut + exp + 4, startAngle, endAngle));
+      ol.setAttribute('fill', 'none');
+      ol.setAttribute('stroke', 'rgba(255,255,255,0.8)');
+      ol.setAttribute('stroke-width', '2');
+      svg.appendChild(ol);
+    }
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', describeEllipseArc(cx, cy, Math.max(0, hwIn - exp), Math.max(0, hhIn - exp), hwOut + exp, hhOut + exp, startAngle, endAngle));
+    path.setAttribute('fill', c.h);
+    path.classList.add('swatch');
+    path.addEventListener('click', () => onSwatchClick(i));
+    path.addEventListener('touchend', (e) => { e.preventDefault(); onSwatchClick(i); });
+    svg.appendChild(path);
+  });
+
+  // Tooltip — always outside the swatch, clamped to screen
+  if (selectedIdx >= 0 && selectedIdx < colors.length) {
+    const c = colors[selectedIdx];
+    const midAngle = segAngle * selectedIdx + segAngle / 2 - Math.PI / 2;
+    const cosA = Math.cos(midAngle), sinA = Math.sin(midAngle);
+    const tx0 = cx + cosA * (hwOut + 52);
+    const ty0 = cy + sinA * (hhOut + 52);
+    const tx = Math.max(80, Math.min(w - 80, tx0));
+    const ty = Math.max(60, Math.min(h - 180, ty0));
+
+    $('tooltip-name').textContent = c.n;
+    $('tooltip-hex').textContent = c.h;
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+    tooltip.style.transform = 'translate(-50%, -50%)';
+    tooltip.classList.add('show');
+  } else {
+    tooltip.classList.remove('show');
+  }
+}
+
+function onSwatchClick(i) {
+  const colors = showBad ? palette.bad : palette.good;
+  if (selectedIdx === i) {
+    openFullscreen(colors[i]);
+  } else {
+    selectedIdx = i;
+    updateOverlayForColor(colors[i].h);
+    applyColorAdaptation(colors[i].h);
+    drawRing();
+  }
+}
+
+function updateOverlayForColor(hex) {
+  overlay.style.background = hex || '';
+}
+
+// ── EXPLAIN ──
+function openExplain() {
+  const exp = EXPLANATIONS[paletteKey];
+  if (!exp) return;
+  $('explain-tagline').textContent = exp.tagline;
+  $('explain-why').textContent = exp.why;
+  $('explain-tip').textContent = exp.tip;
+  $('explain-sheet').classList.add('show');
+}
+function closeExplain() { $('explain-sheet').classList.remove('show'); }
+
+// ── TOGGLE ──
+function toggleMode() {
+  showBad = !showBad;
+  selectedIdx = -1;
+  updateOverlayForColor(null);
+  applyColorAdaptation(null);
+  $('toggle-track').classList.toggle('on', showBad);
+  $('lbl-bad').classList.toggle('active-bad', showBad);
+  drawRing();
+}
+
+// ── FULLSCREEN ──
+function openFullscreen(c) {
+  fsPreview.style.background = c.h;
+  const lum = luminance(c.h);
+  const textCol = lum > 0.5 ? '#0a0a0a' : '#f0ece4';
+  const dimCol = lum > 0.5 ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
+  $('fs-name').textContent = c.n; $('fs-name').style.color = textCol;
+  $('fs-hex').textContent = c.h; $('fs-hex').style.color = dimCol;
+  $('fs-hint').style.color = dimCol;
+  fsPreview.classList.add('show');
+}
+function closeFullscreen() { fsPreview.classList.remove('show'); }
+
+function luminance(hex) {
+  const r = parseInt(hex.slice(1,3),16)/255;
+  const g = parseInt(hex.slice(3,5),16)/255;
+  const b = parseInt(hex.slice(5,7),16)/255;
+  return 0.299*r + 0.587*g + 0.114*b;
+}
+
+// ── COLOR ADAPTATION ──
+function applyColorAdaptation(hex) {
+  if (hex && luminance(hex) > 0.5) {
+    app.style.setProperty('--text', '#0a0a0a');
+    app.style.setProperty('--text-dim', 'rgba(10,10,10,0.55)');
+    app.style.setProperty('--text-ghost', 'rgba(10,10,10,0.35)');
+    app.style.setProperty('--glass', 'rgba(0,0,0,0.06)');
+    app.style.setProperty('--glass-border', 'rgba(0,0,0,0.14)');
+    app.classList.add('light-bg');
+  } else {
+    app.style.setProperty('--text', '#f0ece4');
+    app.style.setProperty('--text-dim', 'rgba(240,236,228,0.4)');
+    app.style.setProperty('--text-ghost', 'rgba(240,236,228,0.2)');
+    app.style.setProperty('--glass', 'rgba(255,255,255,0.06)');
+    app.style.setProperty('--glass-border', 'rgba(255,255,255,0.1)');
+    app.classList.remove('light-bg');
+  }
+}
+
+// ── SERVICE WORKER ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
+// ── RESET ──
+function resetAnalysis() {
+  palette = null; paletteKey = null; analyzed = false; showBad = false; selectedIdx = -1; skinHex = null;
+  closeExplain();
+  updateOverlayForColor(null);
+  applyColorAdaptation(null);
+  svg.innerHTML = ''; svg.style.opacity = 0;
+  overlay.classList.remove('analyzed');
+  faceGuide.classList.remove('hidden');
+  $('post-row').style.display = 'none';
+  btnRescan.style.display = 'none';
+  headerMeta.style.display = 'none';
+  $('main-header').classList.remove('analyzed');
+  tooltip.classList.remove('show');
+  $('toggle-track').classList.remove('on');
+  $('lbl-bad').classList.remove('active-bad');
+  btnAnalyze.style.display = '';
+  btnAnalyze.disabled = false;
+  btnAnalyze.textContent = 'Analyze My Skin Tone';
+  hint.textContent = 'Position your face in the guide, then tap analyze';
+  video.play();
+  drawFaceGuide();
+}
+</script>
+</body>
+</html>
